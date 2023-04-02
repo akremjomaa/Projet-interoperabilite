@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Circulations</title>
+    <style>
+      #graphs,
+      #graph1,#sources {
+        margin-top: 3%;
+        padding: 5%;
+        padding-top: 2%;
+        border: 1px solid black;
+        border-radius: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/leaflet@1.7.1/dist/leaflet.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/MarkerCluster.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/MarkerCluster.Default.css"
+    />
+
+    <div id="graph1">
+      <h2>Circulations sur la ville de Nancy</h2>
+      <div id="mapid" style="height: 500px"></div>
+    </div>
+    <div id="graphs">
+      <h2>COVID-19 au departement Meurthe-et-Moselle</h2>
+      <canvas id="chartHos"></canvas>
+      <canvas id="chartRea"></canvas>
+      <canvas id="chartDeces"></canvas>
+    </div>
+
+    <div id="sources">
+      Sources: <br><a href="https://api.ipify.org/?format=json">IP Data</a><br>
+      <a href="https://ipapi.co">Geolocalisation</a><br>
+      <a href="https://carto.g-ny.org/data/cifs/cifs_waze_v2.json">Circulation</a><br>
+      <a href="https://www.data.gouv.fr/fr/datasets/r/5c4e1452-3850-4b59-b11c-3dd51d7fb8b5">COVID-19</a>
+    </div>
+
+    <script>
+      var ip = 0;
+      var lat = 0;
+      var long = 0;
+
+      (async function () {
+        try {
+          const ipDataResponse = await fetch(
+            "https://api.ipify.org/?format=json"
+          );
+          const ipData = await ipDataResponse.json();
+          const ip = ipData.ip;
+
+          const jsonDataResponse = await fetch(`https://ipapi.co/${ip}/json/`);
+          const jsonData = await jsonDataResponse.json();
+          const lat = jsonData.latitude;
+          const long = jsonData.longitude;
+          const cartoDataResponse = await fetch(
+            "https://carto.g-ny.org/data/cifs/cifs_waze_v2.json"
+          );
+          const data = await cartoDataResponse.json();
+
+          const mymap = L.map("mapid").setView([lat, long], 12);
+          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution:
+              'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+            maxZoom: 18,
+          }).addTo(mymap);
+          const circle = L.circle([lat, long], {
+            color: "red",
+            fillColor: "#f03",
+            fillOpacity: 0.5,
+            radius: 50,
+          })
+            .addTo(mymap)
+            .bindPopup("Vous etes ici !");
+
+          const markers = L.markerClusterGroup();
+
+          data.incidents.forEach((feature) => {
+            const location = feature.location;
+            const latitude = location.polyline.split(" ")[0];
+            const longitude = location.polyline.split(" ")[1];
+            const marker = L.marker([latitude, longitude]);
+            marker.bindPopup(
+              `<b>${feature.type}</b><br>${feature.short_description}<br>${location.location_description}<br>Date debut: ${feature.starttime}<br>Date fin: ${feature.endtime}`
+            );
+
+            markers.addLayer(marker);
+          });
+
+          mymap.addLayer(markers);
+        } catch (error) {
+          console.error("Une erreur est survenue : ", error);
+        }
+      })();
+
+      const url =
+        "https://www.data.gouv.fr/fr/datasets/r/5c4e1452-3850-4b59-b11c-3dd51d7fb8b5";
+
+      Papa.parse(url, {
+        download: true,
+        header: true,
+        complete: function (results) {
+          const data = results.data;
+          const departementData = data.filter(function (element) {
+            return element.dep == 54;
+          });
+
+          const filtredData = departementData.filter(function (element) {
+            return new Date(element.date) >= new Date("2023-01-01");
+          });
+
+          const dates = [];
+          const nombresDeces = [];
+          const nombresRea = [];
+          const nombresHosp = [];
+          filtredData.forEach((element) => {
+            console.log(element.dchosp);
+            nombresDeces.push(element.dchosp);
+
+            nombresRea.push(element.rea);
+            nombresHosp.push(element.hosp);
+
+            dates.push(element.date);
+          });
+
+          const graph1 = document.getElementById("chartHos").getContext("2d");
+          const graph2 = document.getElementById("chartRea").getContext("2d");
+          const graph3 = document.getElementById("chartDeces").getContext("2d");
+
+          const chart1 = new Chart(graph1, {
+            type: "line",
+            data: {
+              labels: dates,
+              datasets: [
+                {
+                  label: `Nombre des patients hospitalises`,
+                  data: Object.values(nombresHosp),
+                  borderColor: " rgb(97, 195, 253) ",
+                  fill: false,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+            },
+          });
+
+          const chart2 = new Chart(graph2, {
+            type: "line",
+            data: {
+              labels: dates,
+              datasets: [
+                {
+                  label: "Nombre de patients en Reanimation",
+                  data: Object.values(nombresRea),
+                  borderColor: "rgb( 207, 112, 247)",
+                  fill: false,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+            },
+          });
+
+          const chart3 = new Chart(graph3, {
+            type: "line",
+            data: {
+              labels: dates,
+              datasets: [
+                {
+                  label: `Nombre de Deces a l'hopital `,
+                  data: Object.values(nombresDeces),
+                  borderColor: " rgb(255, 80, 80) ",
+                  fill: false,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+            },
+          });
+        },
+      });
+    </script>
+  </body>
+</html>
